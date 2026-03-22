@@ -1,0 +1,1416 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GeoVenture — Premium Explorer</title>
+
+<!-- Firebase -->
+<script type="module">
+  import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
+  import { getAuth, signInWithPopup, GoogleAuthProvider, signOut, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
+
+  const firebaseConfig = {
+    apiKey: "AIzaSyBnS8GJaRE0Ojaz7TkSWchhua_3TEUmlRs",
+    authDomain: "login-ce988.firebaseapp.com",
+    projectId: "login-ce988",
+    storageBucket: "login-ce988.firebasestorage.app",
+    messagingSenderId: "401748516895",
+    appId: "1:401748516895:web:cf831143f454d56914352a"
+  };
+
+  const app = initializeApp(firebaseConfig);
+  const auth = getAuth(app);
+  const provider = new GoogleAuthProvider();
+
+  window.firebaseAuth = auth;
+  window.googleProvider = provider;
+  window.firebaseSignIn = () => signInWithPopup(auth, provider);
+  window.firebaseSignOut = () => signOut(auth);
+  window.onAuthStateChanged = (cb) => onAuthStateChanged(auth, cb);
+
+  document.addEventListener('DOMContentLoaded', () => {
+    onAuthStateChanged(auth, (user) => {
+      if (user) {
+        window.currentUser = user;
+        showGameScreen(user);
+      } else {
+        window.currentUser = null;
+        showLoginScreen();
+      }
+    });
+  });
+</script>
+
+<!-- Google Maps -->
+<script>
+  function initMap() {
+    window.mapsReady = true;
+    if (window.pendingMapInit) window.pendingMapInit();
+  }
+</script>
+<script async defer src="https://maps.googleapis.com/maps/api/js?key=AIzaSyD-9tSrke72PouQMnMX-a7eZSW0jkFMBWY&callback=initMap&libraries=geometry"></script>
+
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Outfit:wght@300;400;500;600;700;900&display=swap" rel="stylesheet">
+
+<style>
+  :root {
+    --gold: #D4AF37;
+    --gold2: #FFD700;
+    --dark: #0A0A0F;
+    --dark2: #12121A;
+    --dark3: #1A1A28;
+    --accent: #00FFC2;
+    --red: #FF3B5C;
+    --blue: #4A90FF;
+    --text: #E8E8F0;
+    --text2: #8888A8;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: var(--dark);
+    color: var(--text);
+    font-family: 'Outfit', sans-serif;
+    overflow: hidden;
+    height: 100vh;
+    width: 100vw;
+  }
+
+  /* ===== BACKGROUND PARTICLES ===== */
+  #bg-canvas {
+    position: fixed; top: 0; left: 0;
+    width: 100%; height: 100%;
+    pointer-events: none; z-index: 0;
+  }
+
+  /* ===== SCREENS ===== */
+  .screen {
+    position: fixed; inset: 0;
+    display: flex; align-items: center; justify-content: center;
+    z-index: 10;
+    opacity: 0; pointer-events: none;
+    transition: opacity 0.6s ease;
+  }
+  .screen.active { opacity: 1; pointer-events: all; }
+
+  /* ===== LOGIN SCREEN ===== */
+  #login-screen {
+    background: radial-gradient(ellipse at 30% 50%, #1a1a3e 0%, var(--dark) 60%);
+  }
+
+  .login-card {
+    background: linear-gradient(135deg, rgba(255,255,255,0.05) 0%, rgba(255,255,255,0.02) 100%);
+    border: 1px solid rgba(212,175,55,0.3);
+    border-radius: 32px;
+    padding: 60px 50px;
+    text-align: center;
+    width: 440px;
+    backdrop-filter: blur(20px);
+    position: relative;
+    overflow: hidden;
+    box-shadow: 0 40px 120px rgba(0,0,0,0.6), 0 0 60px rgba(212,175,55,0.08);
+  }
+
+  .login-card::before {
+    content: '';
+    position: absolute; top: 0; left: 0; right: 0;
+    height: 2px;
+    background: linear-gradient(90deg, transparent, var(--gold), transparent);
+    animation: shimmer 3s infinite;
+  }
+
+  @keyframes shimmer { 0%,100%{opacity:0.3} 50%{opacity:1} }
+
+  .game-logo {
+    font-family: 'Bebas Neue', cursive;
+    font-size: 58px;
+    letter-spacing: 6px;
+    background: linear-gradient(135deg, var(--gold) 0%, var(--gold2) 50%, var(--gold) 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    line-height: 1;
+    margin-bottom: 4px;
+    filter: drop-shadow(0 0 30px rgba(212,175,55,0.4));
+  }
+
+  .game-tagline {
+    color: var(--text2);
+    font-size: 13px;
+    letter-spacing: 4px;
+    text-transform: uppercase;
+    margin-bottom: 40px;
+    font-weight: 300;
+  }
+
+  .globe-icon {
+    font-size: 72px;
+    display: block;
+    margin-bottom: 20px;
+    animation: float 3s ease-in-out infinite;
+    filter: drop-shadow(0 0 20px rgba(0,255,194,0.4));
+  }
+
+  @keyframes float {
+    0%,100%{transform:translateY(0) rotate(0deg)}
+    50%{transform:translateY(-10px) rotate(5deg)}
+  }
+
+  .premium-badge {
+    display: inline-flex; align-items: center; gap: 6px;
+    background: linear-gradient(135deg, rgba(212,175,55,0.2), rgba(255,215,0,0.1));
+    border: 1px solid rgba(212,175,55,0.4);
+    border-radius: 20px;
+    padding: 5px 14px;
+    font-size: 11px;
+    letter-spacing: 2px;
+    color: var(--gold);
+    text-transform: uppercase;
+    margin-bottom: 32px;
+    font-weight: 600;
+  }
+
+  .google-btn {
+    width: 100%;
+    display: flex; align-items: center; justify-content: center; gap: 12px;
+    background: linear-gradient(135deg, #fff 0%, #f0f0f0 100%);
+    color: #333;
+    border: none;
+    border-radius: 16px;
+    padding: 16px 24px;
+    font-size: 16px;
+    font-weight: 600;
+    font-family: 'Outfit', sans-serif;
+    cursor: pointer;
+    position: relative;
+    overflow: hidden;
+    transition: all 0.3s cubic-bezier(0.34,1.56,0.64,1);
+    box-shadow: 0 8px 32px rgba(0,0,0,0.3);
+  }
+
+  .google-btn:hover {
+    transform: translateY(-4px) scale(1.02);
+    box-shadow: 0 20px 50px rgba(0,0,0,0.4), 0 0 0 2px var(--gold);
+  }
+
+  .google-btn:active { transform: translateY(-1px) scale(0.99); }
+
+  .google-btn::after {
+    content: '';
+    position: absolute; inset: 0;
+    background: linear-gradient(135deg, transparent 40%, rgba(255,255,255,0.6) 50%, transparent 60%);
+    transform: translateX(-100%);
+    transition: transform 0.6s;
+  }
+
+  .google-btn:hover::after { transform: translateX(100%); }
+
+  .google-icon {
+    width: 22px; height: 22px;
+  }
+
+  .stats-row {
+    display: flex; gap: 20px; margin-top: 36px;
+  }
+
+  .stat-item {
+    flex: 1; text-align: center;
+    padding: 16px 10px;
+    background: rgba(255,255,255,0.03);
+    border-radius: 12px;
+    border: 1px solid rgba(255,255,255,0.06);
+  }
+
+  .stat-num {
+    font-family: 'Bebas Neue', cursive;
+    font-size: 28px;
+    color: var(--gold);
+    letter-spacing: 2px;
+  }
+
+  .stat-label {
+    font-size: 10px;
+    color: var(--text2);
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    margin-top: 2px;
+  }
+
+  /* ===== GAME SCREEN ===== */
+  #game-screen {
+    flex-direction: column;
+    background: var(--dark);
+    padding: 0;
+    align-items: stretch;
+    justify-content: stretch;
+  }
+
+  /* TOP HUD */
+  .hud {
+    position: fixed; top: 0; left: 0; right: 0;
+    z-index: 100;
+    display: flex; align-items: center;
+    padding: 12px 20px;
+    background: linear-gradient(180deg, rgba(10,10,15,0.95) 0%, transparent 100%);
+    backdrop-filter: blur(10px);
+    gap: 16px;
+  }
+
+  .hud-logo {
+    font-family: 'Bebas Neue', cursive;
+    font-size: 24px;
+    letter-spacing: 4px;
+    background: linear-gradient(135deg, var(--gold), var(--gold2));
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  .hud-divider { width: 1px; height: 30px; background: rgba(255,255,255,0.1); }
+
+  .hud-score {
+    display: flex; align-items: center; gap: 8px;
+    background: rgba(255,255,255,0.05);
+    border: 1px solid rgba(212,175,55,0.3);
+    border-radius: 10px;
+    padding: 6px 14px;
+  }
+
+  .score-label { font-size: 10px; color: var(--text2); letter-spacing: 2px; text-transform: uppercase; }
+  .score-value {
+    font-family: 'Bebas Neue', cursive;
+    font-size: 22px;
+    color: var(--gold);
+    letter-spacing: 2px;
+  }
+
+  .hud-timer {
+    display: flex; align-items: center; gap: 8px;
+    background: rgba(255,59,92,0.1);
+    border: 1px solid rgba(255,59,92,0.3);
+    border-radius: 10px;
+    padding: 6px 14px;
+  }
+
+  .timer-value {
+    font-family: 'Bebas Neue', cursive;
+    font-size: 22px;
+    color: var(--red);
+    letter-spacing: 2px;
+    min-width: 42px;
+    text-align: center;
+  }
+
+  .hud-round {
+    font-size: 13px;
+    color: var(--text2);
+    margin-left: auto;
+  }
+
+  .hud-round span { color: var(--text); font-weight: 600; }
+
+  .hud-user {
+    display: flex; align-items: center; gap: 8px;
+    background: rgba(255,255,255,0.04);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 10px;
+    padding: 6px 12px;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+
+  .hud-user:hover { border-color: rgba(255,59,92,0.4); }
+  .hud-avatar { width: 26px; height: 26px; border-radius: 50%; }
+  .hud-name { font-size: 13px; font-weight: 500; max-width: 100px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  /* STREET VIEW */
+  #street-view {
+    position: fixed; inset: 0;
+    z-index: 20;
+  }
+
+  /* MAP PANEL */
+  #map-panel {
+    position: fixed;
+    bottom: 20px; right: 20px;
+    z-index: 200;
+    transition: all 0.4s cubic-bezier(0.34,1.56,0.64,1);
+  }
+
+  #map-panel.expanded {
+    bottom: 0; right: 0;
+    border-radius: 0;
+  }
+
+  .map-container {
+    width: 320px; height: 240px;
+    border-radius: 20px;
+    border: 2px solid rgba(212,175,55,0.4);
+    overflow: hidden;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.6), 0 0 0 1px rgba(212,175,55,0.1);
+    transition: all 0.4s;
+    position: relative;
+    cursor: crosshair;
+  }
+
+  .map-container:hover {
+    width: 380px; height: 300px;
+    border-color: var(--gold);
+    box-shadow: 0 30px 80px rgba(0,0,0,0.7), 0 0 30px rgba(212,175,55,0.2);
+  }
+
+  #guess-map { width: 100%; height: 100%; }
+
+  .map-hint {
+    position: absolute;
+    top: 10px; left: 50%;
+    transform: translateX(-50%);
+    background: rgba(0,0,0,0.7);
+    border: 1px solid rgba(212,175,55,0.3);
+    border-radius: 20px;
+    padding: 4px 12px;
+    font-size: 11px;
+    color: var(--gold);
+    letter-spacing: 1px;
+    pointer-events: none;
+    white-space: nowrap;
+  }
+
+  .guess-btn {
+    width: 100%;
+    margin-top: 8px;
+    padding: 12px;
+    background: linear-gradient(135deg, var(--gold) 0%, var(--gold2) 100%);
+    border: none;
+    border-radius: 12px;
+    color: #000;
+    font-family: 'Outfit', sans-serif;
+    font-size: 14px;
+    font-weight: 700;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    cursor: pointer;
+    transition: all 0.3s cubic-bezier(0.34,1.56,0.64,1);
+    box-shadow: 0 8px 24px rgba(212,175,55,0.3);
+    position: relative;
+    overflow: hidden;
+  }
+
+  .guess-btn:not(:disabled):hover {
+    transform: translateY(-3px) scale(1.02);
+    box-shadow: 0 16px 40px rgba(212,175,55,0.5);
+  }
+
+  .guess-btn:not(:disabled):active { transform: scale(0.98); }
+
+  .guess-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    filter: grayscale(0.5);
+  }
+
+  .guess-btn::after {
+    content: '';
+    position: absolute; inset: 0;
+    background: linear-gradient(135deg, transparent 40%, rgba(255,255,255,0.4) 50%, transparent 60%);
+    transform: translateX(-100%);
+    transition: transform 0.5s;
+  }
+
+  .guess-btn:not(:disabled):hover::after { transform: translateX(100%); }
+
+  /* RESULT OVERLAY */
+  #result-overlay {
+    position: fixed; inset: 0;
+    z-index: 500;
+    background: rgba(0,0,0,0.85);
+    display: flex; align-items: center; justify-content: center;
+    opacity: 0; pointer-events: none;
+    transition: opacity 0.4s;
+    backdrop-filter: blur(8px);
+  }
+
+  #result-overlay.active { opacity: 1; pointer-events: all; }
+
+  .result-card {
+    background: linear-gradient(135deg, var(--dark2), var(--dark3));
+    border: 1px solid rgba(212,175,55,0.3);
+    border-radius: 28px;
+    padding: 40px;
+    width: 600px;
+    max-width: 94vw;
+    position: relative;
+    overflow: hidden;
+    box-shadow: 0 40px 120px rgba(0,0,0,0.8);
+  }
+
+  .result-card::before {
+    content: '';
+    position: absolute; top: 0; left: 0; right: 0; height: 3px;
+    background: linear-gradient(90deg, var(--gold), var(--accent), var(--gold));
+    animation: shimmer 2s infinite;
+  }
+
+  .result-title {
+    font-family: 'Bebas Neue', cursive;
+    font-size: 42px;
+    letter-spacing: 4px;
+    text-align: center;
+    margin-bottom: 6px;
+  }
+
+  .result-location {
+    text-align: center;
+    color: var(--text2);
+    font-size: 14px;
+    margin-bottom: 24px;
+    letter-spacing: 1px;
+  }
+
+  #result-map { width: 100%; height: 240px; border-radius: 16px; overflow: hidden; margin-bottom: 24px; }
+
+  .score-display {
+    display: flex; align-items: center; justify-content: center; gap: 20px;
+    margin-bottom: 24px;
+  }
+
+  .score-circle {
+    width: 120px; height: 120px;
+    border-radius: 50%;
+    background: conic-gradient(var(--gold) 0deg, rgba(255,255,255,0.05) 0deg);
+    display: flex; align-items: center; justify-content: center;
+    position: relative;
+  }
+
+  .score-circle-inner {
+    width: 90px; height: 90px;
+    background: var(--dark2);
+    border-radius: 50%;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+  }
+
+  .score-pts {
+    font-family: 'Bebas Neue', cursive;
+    font-size: 32px;
+    color: var(--gold);
+    letter-spacing: 2px;
+    line-height: 1;
+  }
+
+  .score-pts-label { font-size: 10px; color: var(--text2); letter-spacing: 2px; }
+
+  .distance-info {
+    flex: 1;
+    background: rgba(255,255,255,0.04);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 16px;
+    padding: 20px;
+  }
+
+  .distance-num {
+    font-family: 'Bebas Neue', cursive;
+    font-size: 38px;
+    color: var(--accent);
+    letter-spacing: 2px;
+    line-height: 1;
+  }
+
+  .distance-label { font-size: 11px; color: var(--text2); letter-spacing: 2px; text-transform: uppercase; }
+
+  .result-actions { display: flex; gap: 12px; }
+
+  .btn-next {
+    flex: 1; padding: 16px;
+    background: linear-gradient(135deg, var(--gold), var(--gold2));
+    border: none; border-radius: 14px;
+    color: #000; font-family: 'Outfit', sans-serif;
+    font-size: 16px; font-weight: 700;
+    cursor: pointer; letter-spacing: 2px; text-transform: uppercase;
+    transition: all 0.3s cubic-bezier(0.34,1.56,0.64,1);
+    box-shadow: 0 8px 24px rgba(212,175,55,0.3);
+  }
+
+  .btn-next:hover {
+    transform: translateY(-3px) scale(1.02);
+    box-shadow: 0 16px 40px rgba(212,175,55,0.5);
+  }
+
+  /* FINAL SCREEN */
+  #final-screen {
+    background: radial-gradient(ellipse at center, #1a1a3e 0%, var(--dark) 70%);
+    flex-direction: column;
+    z-index: 600;
+  }
+
+  .final-card {
+    background: linear-gradient(135deg, var(--dark2), var(--dark3));
+    border: 1px solid rgba(212,175,55,0.4);
+    border-radius: 32px;
+    padding: 50px;
+    width: 520px;
+    max-width: 94vw;
+    text-align: center;
+    position: relative;
+    overflow: hidden;
+    box-shadow: 0 40px 120px rgba(0,0,0,0.7);
+  }
+
+  .trophy {
+    font-size: 80px;
+    display: block;
+    margin-bottom: 16px;
+    animation: trophy-bounce 0.8s cubic-bezier(0.34,1.56,0.64,1) both;
+  }
+
+  @keyframes trophy-bounce {
+    0% { transform: scale(0) rotate(-20deg); opacity: 0; }
+    100% { transform: scale(1) rotate(0deg); opacity: 1; }
+  }
+
+  .final-title {
+    font-family: 'Bebas Neue', cursive;
+    font-size: 52px;
+    letter-spacing: 4px;
+    background: linear-gradient(135deg, var(--gold), var(--gold2));
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+    background-clip: text;
+    margin-bottom: 8px;
+  }
+
+  .final-total {
+    font-family: 'Bebas Neue', cursive;
+    font-size: 80px;
+    color: var(--gold);
+    letter-spacing: 4px;
+    line-height: 1;
+    text-shadow: 0 0 40px rgba(212,175,55,0.5);
+    margin: 20px 0;
+  }
+
+  .final-rank {
+    display: inline-block;
+    padding: 8px 20px;
+    border-radius: 20px;
+    font-size: 14px;
+    font-weight: 600;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    margin-bottom: 28px;
+  }
+
+  .btn-play-again {
+    width: 100%;
+    padding: 18px;
+    background: linear-gradient(135deg, var(--gold), var(--gold2));
+    border: none; border-radius: 16px;
+    color: #000; font-family: 'Outfit', sans-serif;
+    font-size: 18px; font-weight: 700;
+    cursor: pointer; letter-spacing: 3px; text-transform: uppercase;
+    transition: all 0.3s cubic-bezier(0.34,1.56,0.64,1);
+    box-shadow: 0 12px 40px rgba(212,175,55,0.4);
+    position: relative; overflow: hidden;
+  }
+
+  .btn-play-again:hover {
+    transform: translateY(-4px) scale(1.02);
+    box-shadow: 0 24px 60px rgba(212,175,55,0.6);
+  }
+
+  /* LOADING */
+  #loading-screen {
+    background: var(--dark);
+    flex-direction: column; gap: 20px;
+    z-index: 700;
+  }
+
+  .loader {
+    width: 60px; height: 60px;
+    border: 3px solid rgba(212,175,55,0.2);
+    border-top-color: var(--gold);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .loader-text {
+    font-family: 'Bebas Neue', cursive;
+    font-size: 24px;
+    letter-spacing: 6px;
+    color: var(--text2);
+    animation: pulse 1.5s ease-in-out infinite;
+  }
+
+  @keyframes pulse { 0%,100%{opacity:0.4} 50%{opacity:1} }
+
+  /* TOAST */
+  .toast {
+    position: fixed; bottom: 80px; left: 50%;
+    transform: translateX(-50%) translateY(20px);
+    background: rgba(255,255,255,0.08);
+    border: 1px solid rgba(255,255,255,0.12);
+    border-radius: 12px;
+    padding: 12px 24px;
+    font-size: 14px;
+    color: var(--text);
+    z-index: 1000;
+    opacity: 0;
+    transition: all 0.3s;
+    backdrop-filter: blur(10px);
+    pointer-events: none;
+  }
+
+  .toast.show {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+
+  /* PING ANIMATION ON MAP */
+  @keyframes ping {
+    0%{transform:scale(1);opacity:1}
+    75%,100%{transform:scale(3);opacity:0}
+  }
+
+  .map-ping::after {
+    content: '';
+    position: absolute;
+    animation: ping 1s cubic-bezier(0,0,0.2,1) infinite;
+  }
+
+  /* Confetti */
+  .confetti-piece {
+    position: fixed;
+    width: 10px; height: 10px;
+    border-radius: 2px;
+    animation: confetti-fall linear forwards;
+    z-index: 9999;
+    pointer-events: none;
+  }
+
+  @keyframes confetti-fall {
+    0%{transform:translateY(-20px) rotate(0deg);opacity:1}
+    100%{transform:translateY(100vh) rotate(720deg);opacity:0}
+  }
+</style>
+</head>
+<body>
+
+<!-- BG Particles -->
+<canvas id="bg-canvas"></canvas>
+
+<!-- LOADING -->
+<div id="loading-screen" class="screen active">
+  <div class="loader"></div>
+  <div class="loader-text">Loading...</div>
+</div>
+
+<!-- LOGIN SCREEN -->
+<div id="login-screen" class="screen">
+  <div class="login-card">
+    <span class="globe-icon">🌍</span>
+    <div class="game-logo">GeoVenture</div>
+    <div class="game-tagline">Explore The World</div>
+    <div class="premium-badge">⭐ Premium Edition</div>
+    <button class="google-btn" id="google-login-btn">
+      <svg class="google-icon" viewBox="0 0 48 48">
+        <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/>
+        <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/>
+        <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/>
+        <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/>
+      </svg>
+      Masuk dengan Google
+    </button>
+    <div class="stats-row">
+      <div class="stat-item">
+        <div class="stat-num">55M+</div>
+        <div class="stat-label">Pemain</div>
+      </div>
+      <div class="stat-item">
+        <div class="stat-num">200+</div>
+        <div class="stat-label">Negara</div>
+      </div>
+      <div class="stat-item">
+        <div class="stat-num">∞</div>
+        <div class="stat-label">Lokasi</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- GAME SCREEN -->
+<div id="game-screen" class="screen">
+  <!-- HUD -->
+  <div class="hud">
+    <div class="hud-logo">GeoVenture</div>
+    <div class="hud-divider"></div>
+    <div class="hud-score">
+      <span class="score-label">Skor</span>
+      <span class="score-value" id="hud-score">0</span>
+    </div>
+    <div class="hud-timer">
+      <span style="font-size:14px">⏱</span>
+      <span class="timer-value" id="timer-val">90</span>
+    </div>
+    <div class="hud-round" style="margin-left:auto">Ronde <span id="round-num">1</span>/5</div>
+    <div class="hud-user" id="hud-user-btn">
+      <img class="hud-avatar" id="hud-avatar" src="" alt="">
+      <span class="hud-name" id="hud-name"></span>
+      <span style="font-size:10px;color:var(--text2)">Keluar</span>
+    </div>
+  </div>
+
+  <!-- Street View -->
+  <div id="street-view"></div>
+
+  <!-- Map Panel -->
+  <div id="map-panel">
+    <div class="map-container">
+      <div id="guess-map"></div>
+      <div class="map-hint">📍 Klik untuk tebak lokasi</div>
+    </div>
+    <button class="guess-btn" id="guess-btn" disabled>Tebak Lokasi!</button>
+  </div>
+</div>
+
+<!-- RESULT OVERLAY -->
+<div id="result-overlay">
+  <div class="result-card">
+    <div class="result-title" id="result-title">🎯 Tepat Sekali!</div>
+    <div class="result-location" id="result-location">Lokasi: Tokyo, Japan</div>
+    <div id="result-map"></div>
+    <div class="score-display">
+      <div class="score-circle" id="score-circle">
+        <div class="score-circle-inner">
+          <div class="score-pts" id="round-score">0</div>
+          <div class="score-pts-label">POIN</div>
+        </div>
+      </div>
+      <div class="distance-info">
+        <div class="distance-num" id="distance-val">0 km</div>
+        <div class="distance-label">Jarak dari lokasi</div>
+        <div style="margin-top:12px;font-size:13px;color:var(--text2)" id="result-comment"></div>
+      </div>
+    </div>
+    <div class="result-actions">
+      <button class="btn-next" id="next-btn">Ronde Berikutnya →</button>
+    </div>
+  </div>
+</div>
+
+<!-- FINAL SCREEN -->
+<div id="final-screen" class="screen">
+  <div class="final-card">
+    <span class="trophy" id="trophy-icon">🏆</span>
+    <div class="final-title">Game Selesai!</div>
+    <div style="color:var(--text2);font-size:14px;letter-spacing:2px">TOTAL SKOR</div>
+    <div class="final-total" id="final-score">0</div>
+    <div class="final-rank" id="final-rank"></div>
+    <button class="btn-play-again" id="play-again-btn">🌍 Main Lagi</button>
+  </div>
+</div>
+
+<!-- Toast -->
+<div class="toast" id="toast"></div>
+
+<script>
+// ===== AUDIO ENGINE =====
+const AudioCtx = window.AudioContext || window.webkitAudioContext;
+let audioCtx;
+
+function getAudioCtx() {
+  if (!audioCtx) audioCtx = new AudioCtx();
+  return audioCtx;
+}
+
+const SFX = {
+  click() {
+    const ctx = getAudioCtx();
+    const o = ctx.createOscillator();
+    const g = ctx.createGain();
+    o.connect(g); g.connect(ctx.destination);
+    o.frequency.setValueAtTime(800, ctx.currentTime);
+    o.frequency.exponentialRampToValueAtTime(400, ctx.currentTime + 0.1);
+    g.gain.setValueAtTime(0.3, ctx.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.1);
+    o.start(); o.stop(ctx.currentTime + 0.1);
+  },
+  pin() {
+    const ctx = getAudioCtx();
+    [0,0.05,0.1].forEach((delay, i) => {
+      const o = ctx.createOscillator();
+      const g = ctx.createGain();
+      o.connect(g); g.connect(ctx.destination);
+      o.type = 'sine';
+      o.frequency.value = 600 + i * 200;
+      g.gain.setValueAtTime(0.2, ctx.currentTime + delay);
+      g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + delay + 0.15);
+      o.start(ctx.currentTime + delay);
+      o.stop(ctx.currentTime + delay + 0.15);
+    });
+  },
+  success() {
+    const ctx = getAudioCtx();
+    [523, 659, 784, 1047].forEach((freq, i) => {
+      const o = ctx.createOscillator();
+      const g = ctx.createGain();
+      o.connect(g); g.connect(ctx.destination);
+      o.type = 'sine';
+      o.frequency.value = freq;
+      g.gain.setValueAtTime(0.0, ctx.currentTime + i * 0.1);
+      g.gain.linearRampToValueAtTime(0.25, ctx.currentTime + i * 0.1 + 0.05);
+      g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + i * 0.1 + 0.3);
+      o.start(ctx.currentTime + i * 0.1);
+      o.stop(ctx.currentTime + i * 0.1 + 0.3);
+    });
+  },
+  fail() {
+    const ctx = getAudioCtx();
+    const o = ctx.createOscillator();
+    const g = ctx.createGain();
+    o.connect(g); g.connect(ctx.destination);
+    o.type = 'sawtooth';
+    o.frequency.setValueAtTime(300, ctx.currentTime);
+    o.frequency.exponentialRampToValueAtTime(100, ctx.currentTime + 0.4);
+    g.gain.setValueAtTime(0.2, ctx.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.4);
+    o.start(); o.stop(ctx.currentTime + 0.4);
+  },
+  countdown() {
+    const ctx = getAudioCtx();
+    const o = ctx.createOscillator();
+    const g = ctx.createGain();
+    o.connect(g); g.connect(ctx.destination);
+    o.frequency.value = 1000;
+    g.gain.setValueAtTime(0.15, ctx.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.08);
+    o.start(); o.stop(ctx.currentTime + 0.08);
+  },
+  trophy() {
+    const ctx = getAudioCtx();
+    const freqs = [261, 329, 392, 523, 659, 784, 1047];
+    freqs.forEach((freq, i) => {
+      const o = ctx.createOscillator();
+      const g = ctx.createGain();
+      o.connect(g); g.connect(ctx.destination);
+      o.type = 'sine';
+      o.frequency.value = freq;
+      const t = ctx.currentTime + i * 0.08;
+      g.gain.setValueAtTime(0, t);
+      g.gain.linearRampToValueAtTime(0.2, t + 0.04);
+      g.gain.exponentialRampToValueAtTime(0.001, t + 0.5);
+      o.start(t); o.stop(t + 0.5);
+    });
+  },
+  ambient() {
+    const ctx = getAudioCtx();
+    const createTone = (freq, vol, dur) => {
+      const o = ctx.createOscillator();
+      const g = ctx.createGain();
+      o.connect(g); g.connect(ctx.destination);
+      o.type = 'sine'; o.frequency.value = freq;
+      g.gain.setValueAtTime(0, ctx.currentTime);
+      g.gain.linearRampToValueAtTime(vol, ctx.currentTime + 1);
+      g.gain.linearRampToValueAtTime(0, ctx.currentTime + dur);
+      o.start(); o.stop(ctx.currentTime + dur);
+    };
+    createTone(110, 0.05, 4);
+    createTone(165, 0.03, 6);
+    createTone(220, 0.02, 8);
+  }
+};
+
+// ===== BACKGROUND PARTICLES =====
+(function() {
+  const canvas = document.getElementById('bg-canvas');
+  const ctx = canvas.getContext('2d');
+  let particles = [];
+
+  function resize() {
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+  }
+
+  function createParticles() {
+    particles = [];
+    for (let i = 0; i < 80; i++) {
+      particles.push({
+        x: Math.random() * canvas.width,
+        y: Math.random() * canvas.height,
+        r: Math.random() * 2 + 0.5,
+        vx: (Math.random() - 0.5) * 0.3,
+        vy: (Math.random() - 0.5) * 0.3,
+        alpha: Math.random() * 0.5 + 0.1,
+        color: Math.random() > 0.7 ? '#D4AF37' : '#4A90FF'
+      });
+    }
+  }
+
+  function animate() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    particles.forEach(p => {
+      p.x += p.vx; p.y += p.vy;
+      if (p.x < 0) p.x = canvas.width;
+      if (p.x > canvas.width) p.x = 0;
+      if (p.y < 0) p.y = canvas.height;
+      if (p.y > canvas.height) p.y = 0;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+      ctx.fillStyle = p.color;
+      ctx.globalAlpha = p.alpha;
+      ctx.fill();
+    });
+    ctx.globalAlpha = 1;
+
+    // connect nearby particles
+    particles.forEach((a, i) => {
+      particles.slice(i+1).forEach(b => {
+        const d = Math.hypot(a.x - b.x, a.y - b.y);
+        if (d < 100) {
+          ctx.beginPath();
+          ctx.moveTo(a.x, a.y);
+          ctx.lineTo(b.x, b.y);
+          ctx.strokeStyle = 'rgba(212,175,55,' + (1 - d/100) * 0.1 + ')';
+          ctx.lineWidth = 0.5;
+          ctx.stroke();
+        }
+      });
+    });
+
+    requestAnimationFrame(animate);
+  }
+
+  resize();
+  createParticles();
+  animate();
+  window.addEventListener('resize', () => { resize(); createParticles(); });
+})();
+
+// ===== GAME STATE =====
+const LOCATIONS = [
+  { lat: 35.6762, lng: 139.6503, name: "Tokyo, Japan", sv: { lat: 35.6762, lng: 139.6503 } },
+  { lat: 48.8566, lng: 2.3522, name: "Paris, France", sv: { lat: 48.8584, lng: 2.2945 } },
+  { lat: -22.9068, lng: -43.1729, name: "Rio de Janeiro, Brazil", sv: { lat: -22.9068, lng: -43.1729 } },
+  { lat: 40.7128, lng: -74.0060, name: "New York, USA", sv: { lat: 40.7484, lng: -73.9967 } },
+  { lat: 51.5074, lng: -0.1278, name: "London, UK", sv: { lat: 51.5007, lng: -0.1246 } },
+  { lat: -33.8688, lng: 151.2093, name: "Sydney, Australia", sv: { lat: -33.8568, lng: 151.2153 } },
+  { lat: 55.7558, lng: 37.6173, name: "Moscow, Russia", sv: { lat: 55.7539, lng: 37.6208 } },
+  { lat: 1.3521, lng: 103.8198, name: "Singapore", sv: { lat: 1.2839, lng: 103.8607 } },
+  { lat: 30.0444, lng: 31.2357, name: "Cairo, Egypt", sv: { lat: 29.9765, lng: 31.1313 } },
+  { lat: -4.0435, lng: 39.6682, name: "Mombasa, Kenya", sv: { lat: -4.0435, lng: 39.6682 } },
+  { lat: 41.3851, lng: 2.1734, name: "Barcelona, Spain", sv: { lat: 41.3851, lng: 2.1734 } },
+  { lat: 25.1972, lng: 55.2744, name: "Dubai, UAE", sv: { lat: 25.1972, lng: 55.2744 } },
+  { lat: 19.0760, lng: 72.8777, name: "Mumbai, India", sv: { lat: 19.0760, lng: 72.8777 } },
+  { lat: 37.9838, lng: 23.7275, name: "Athens, Greece", sv: { lat: 37.9715, lng: 23.7257 } },
+  { lat: -34.6037, lng: -58.3816, name: "Buenos Aires, Argentina", sv: { lat: -34.6037, lng: -58.3816 } },
+];
+
+let gameState = {
+  round: 0,
+  totalRounds: 5,
+  totalScore: 0,
+  guessMarker: null,
+  locations: [],
+  guessLatLng: null,
+  timerInterval: null,
+  timeLeft: 90,
+  guessMap: null,
+  resultMap: null,
+};
+
+// ===== UTILS =====
+function showScreen(id) {
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+}
+
+function showToast(msg, duration = 2500) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), duration);
+}
+
+function confetti(count = 80) {
+  const colors = ['#D4AF37','#FFD700','#00FFC2','#FF3B5C','#4A90FF','#fff'];
+  for (let i = 0; i < count; i++) {
+    const el = document.createElement('div');
+    el.className = 'confetti-piece';
+    el.style.cssText = `
+      left:${Math.random()*100}vw;
+      top:-20px;
+      background:${colors[Math.floor(Math.random()*colors.length)]};
+      animation-duration:${1.5 + Math.random()*2}s;
+      animation-delay:${Math.random()*0.5}s;
+      transform:rotate(${Math.random()*360}deg);
+      width:${6+Math.random()*8}px;
+      height:${6+Math.random()*8}px;
+      border-radius:${Math.random()>0.5?'50%':'2px'};
+    `;
+    document.body.appendChild(el);
+    setTimeout(() => el.remove(), 4000);
+  }
+}
+
+function calcScore(distanceKm) {
+  if (distanceKm < 1) return 5000;
+  if (distanceKm > 10000) return 0;
+  return Math.round(5000 * Math.exp(-distanceKm / 1500));
+}
+
+function haversineDistance(lat1, lon1, lat2, lon2) {
+  const R = 6371;
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLon = (lon2 - lon1) * Math.PI / 180;
+  const a = Math.sin(dLat/2)**2 + Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLon/2)**2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+}
+
+// ===== LOGIN =====
+document.getElementById('google-login-btn').addEventListener('click', async () => {
+  SFX.click();
+  try {
+    await window.firebaseSignIn();
+  } catch (e) {
+    showToast('❌ Login gagal: ' + e.message);
+  }
+});
+
+function showLoginScreen() {
+  showScreen('login-screen');
+}
+
+function showGameScreen(user) {
+  document.getElementById('hud-avatar').src = user.photoURL || '';
+  document.getElementById('hud-name').textContent = user.displayName || 'Player';
+  startGame();
+}
+
+document.getElementById('hud-user-btn').addEventListener('click', async () => {
+  SFX.click();
+  if (confirm('Keluar dari game?')) {
+    clearInterval(gameState.timerInterval);
+    await window.firebaseSignOut();
+    showScreen('login-screen');
+  }
+});
+
+// ===== GAME INIT =====
+function startGame() {
+  showScreen('loading-screen');
+  SFX.ambient();
+
+  // shuffle & pick locations
+  const shuffled = [...LOCATIONS].sort(() => Math.random() - 0.5);
+  gameState.locations = shuffled.slice(0, gameState.totalRounds);
+  gameState.round = 0;
+  gameState.totalScore = 0;
+  document.getElementById('hud-score').textContent = '0';
+
+  // init guess map
+  if (!gameState.guessMap) {
+    const initGuessMap = () => {
+      const map = new google.maps.Map(document.getElementById('guess-map'), {
+        zoom: 2,
+        center: { lat: 20, lng: 0 },
+        disableDefaultUI: true,
+        zoomControl: true,
+        styles: darkMapStyles
+      });
+      gameState.guessMap = map;
+      map.addListener('click', (e) => {
+        SFX.pin();
+        getAudioCtx(); // unlock audio
+        placeGuessMarker(e.latLng);
+      });
+    };
+    if (window.mapsReady) initGuessMap();
+    else window.pendingMapInit = initGuessMap;
+  }
+
+  setTimeout(() => {
+    showScreen('game-screen');
+    loadRound();
+  }, 1200);
+}
+
+function loadRound() {
+  const loc = gameState.locations[gameState.round];
+  gameState.guessLatLng = null;
+  gameState.guessMarker = null;
+
+  document.getElementById('round-num').textContent = gameState.round + 1;
+  document.getElementById('guess-btn').disabled = true;
+
+  // Reset guess map
+  if (gameState.guessMap) {
+    gameState.guessMap.setCenter({ lat: 20, lng: 0 });
+    gameState.guessMap.setZoom(2);
+    if (gameState.guessMarkerObj) {
+      gameState.guessMarkerObj.setMap(null);
+      gameState.guessMarkerObj = null;
+    }
+  }
+
+  // Load Street View
+  if (window.google) {
+    const sv = new google.maps.StreetViewPanorama(
+      document.getElementById('street-view'), {
+        position: { lat: loc.sv.lat, lng: loc.sv.lng },
+        pov: { heading: Math.random() * 360, pitch: 0 },
+        zoom: 1,
+        disableDefaultUI: false,
+        showRoadLabels: false,
+        addressControl: false,
+        enableCloseButton: false,
+        fullscreenControl: false,
+      }
+    );
+  }
+
+  // Timer
+  clearInterval(gameState.timerInterval);
+  gameState.timeLeft = 90;
+  document.getElementById('timer-val').textContent = '90';
+  document.getElementById('timer-val').style.color = 'var(--red)';
+
+  let lastBeep = 90;
+  gameState.timerInterval = setInterval(() => {
+    gameState.timeLeft--;
+    document.getElementById('timer-val').textContent = gameState.timeLeft;
+
+    if (gameState.timeLeft <= 10) {
+      document.getElementById('timer-val').style.color = '#ff0000';
+      if (gameState.timeLeft !== lastBeep) {
+        SFX.countdown();
+        lastBeep = gameState.timeLeft;
+      }
+    }
+
+    if (gameState.timeLeft <= 0) {
+      clearInterval(gameState.timerInterval);
+      if (!gameState.guessLatLng) {
+        // Auto guess center
+        gameState.guessLatLng = new google.maps.LatLng(0, 0);
+      }
+      SFX.fail();
+      showResult();
+    }
+  }, 1000);
+}
+
+function placeGuessMarker(latLng) {
+  if (gameState.guessMarkerObj) {
+    gameState.guessMarkerObj.setMap(null);
+  }
+
+  gameState.guessLatLng = latLng;
+
+  gameState.guessMarkerObj = new google.maps.Marker({
+    position: latLng,
+    map: gameState.guessMap,
+    icon: {
+      path: google.maps.SymbolPath.CIRCLE,
+      scale: 10,
+      fillColor: '#D4AF37',
+      fillOpacity: 1,
+      strokeColor: '#000',
+      strokeWeight: 2,
+    },
+    animation: google.maps.Animation.DROP,
+  });
+
+  document.getElementById('guess-btn').disabled = false;
+}
+
+document.getElementById('guess-btn').addEventListener('click', () => {
+  if (!gameState.guessLatLng) return;
+  SFX.click();
+  clearInterval(gameState.timerInterval);
+  showResult();
+});
+
+function showResult() {
+  const loc = gameState.locations[gameState.round];
+  const guessLat = gameState.guessLatLng ? gameState.guessLatLng.lat() : 0;
+  const guessLng = gameState.guessLatLng ? gameState.guessLatLng.lng() : 0;
+
+  const dist = haversineDistance(guessLat, guessLng, loc.lat, loc.lng);
+  const pts = calcScore(dist);
+  gameState.totalScore += pts;
+
+  // Score circle animation
+  const progress = pts / 5000;
+  const deg = progress * 360;
+  document.getElementById('score-circle').style.background =
+    `conic-gradient(var(--gold) ${deg}deg, rgba(255,255,255,0.05) ${deg}deg)`;
+
+  document.getElementById('round-score').textContent = pts.toLocaleString();
+  document.getElementById('distance-val').textContent =
+    dist < 1 ? `${Math.round(dist*1000)} m` : `${Math.round(dist).toLocaleString()} km`;
+  document.getElementById('result-location').textContent = '📍 ' + loc.name;
+  document.getElementById('hud-score').textContent = gameState.totalScore.toLocaleString();
+
+  let title, comment;
+  if (dist < 1) { title = '🎯 SEMPURNA!'; comment = 'Luar biasa! Tepat banget!'; SFX.success(); confetti(120); }
+  else if (dist < 50) { title = '🔥 Sangat Dekat!'; comment = 'Hampir sempurna!'; SFX.success(); confetti(80); }
+  else if (dist < 500) { title = '✅ Bagus!'; comment = 'Cukup dekat!'; SFX.success(); confetti(40); }
+  else if (dist < 2000) { title = '👍 Lumayan'; comment = 'Bisa lebih baik lagi!'; SFX.click(); }
+  else { title = '😅 Jauh banget!'; comment = 'Terus berlatih!'; SFX.fail(); }
+
+  document.getElementById('result-title').textContent = title;
+  document.getElementById('result-comment').textContent = comment;
+
+  // Result map
+  setTimeout(() => {
+    const rMap = new google.maps.Map(document.getElementById('result-map'), {
+      zoom: 3,
+      center: { lat: (guessLat + loc.lat)/2, lng: (guessLng + loc.lng)/2 },
+      disableDefaultUI: true,
+      styles: darkMapStyles,
+    });
+
+    // Actual location marker (red)
+    new google.maps.Marker({
+      position: { lat: loc.lat, lng: loc.lng },
+      map: rMap,
+      icon: {
+        path: google.maps.SymbolPath.CIRCLE,
+        scale: 12,
+        fillColor: '#FF3B5C',
+        fillOpacity: 1,
+        strokeColor: '#fff',
+        strokeWeight: 2,
+      },
+      title: 'Lokasi Asli'
+    });
+
+    // Guess marker (gold)
+    if (gameState.guessLatLng) {
+      new google.maps.Marker({
+        position: { lat: guessLat, lng: guessLng },
+        map: rMap,
+        icon: {
+          path: google.maps.SymbolPath.CIRCLE,
+          scale: 10,
+          fillColor: '#D4AF37',
+          fillOpacity: 1,
+          strokeColor: '#000',
+          strokeWeight: 2,
+        },
+        title: 'Tebakan Kamu'
+      });
+
+      // Line between
+      new google.maps.Polyline({
+        path: [
+          { lat: guessLat, lng: guessLng },
+          { lat: loc.lat, lng: loc.lng }
+        ],
+        map: rMap,
+        strokeColor: '#00FFC2',
+        strokeOpacity: 0.8,
+        strokeWeight: 2,
+        icons: [{
+          icon: { path: 'M 0,-1 0,1', strokeOpacity: 1, scale: 3 },
+          offset: '0', repeat: '20px'
+        }]
+      });
+    }
+
+    // Fit bounds
+    const bounds = new google.maps.LatLngBounds();
+    bounds.extend({ lat: loc.lat, lng: loc.lng });
+    if (gameState.guessLatLng) bounds.extend({ lat: guessLat, lng: guessLng });
+    rMap.fitBounds(bounds, { top: 20, bottom: 20, left: 20, right: 20 });
+
+  }, 100);
+
+  document.getElementById('result-overlay').classList.add('active');
+}
+
+document.getElementById('next-btn').addEventListener('click', () => {
+  SFX.click();
+  document.getElementById('result-overlay').classList.remove('active');
+  gameState.round++;
+
+  if (gameState.round >= gameState.totalRounds) {
+    showFinal();
+  } else {
+    loadRound();
+  }
+});
+
+function showFinal() {
+  const total = gameState.totalScore;
+  document.getElementById('final-score').textContent = total.toLocaleString();
+
+  let rank, color, trophy;
+  if (total >= 22500) { rank = '🌍 World Explorer'; color = 'linear-gradient(135deg,#D4AF37,#FFD700)'; trophy = '🏆'; }
+  else if (total >= 17500) { rank = '✈️ Globetrotter'; color = 'linear-gradient(135deg,#C0C0C0,#E8E8E8)'; trophy = '🥈'; }
+  else if (total >= 12500) { rank = '🗺️ Navigator'; color = 'linear-gradient(135deg,#CD7F32,#E8A87C)'; trophy = '🥉'; }
+  else if (total >= 7500) { rank = '🧭 Explorer'; color = 'linear-gradient(135deg,#4A90FF,#6AAFFF)'; trophy = '🎖️'; }
+  else { rank = '🌱 Beginner'; color = 'linear-gradient(135deg,#00FFC2,#00E5AC)'; trophy = '🌍'; }
+
+  document.getElementById('trophy-icon').textContent = trophy;
+  const rankEl = document.getElementById('final-rank');
+  rankEl.textContent = rank;
+  rankEl.style.background = color;
+  rankEl.style.webkitBackgroundClip = 'text';
+  rankEl.style.webkitTextFillColor = 'transparent';
+  rankEl.style.backgroundClip = 'text';
+  rankEl.style.border = '1px solid rgba(255,255,255,0.15)';
+  rankEl.style.padding = '8px 20px';
+  rankEl.style.borderRadius = '20px';
+
+  setTimeout(() => { SFX.trophy(); confetti(150); }, 300);
+  showScreen('final-screen');
+}
+
+document.getElementById('play-again-btn').addEventListener('click', () => {
+  SFX.click();
+  startGame();
+});
+
+// ===== DARK MAP STYLES =====
+const darkMapStyles = [
+  { elementType: 'geometry', stylers: [{ color: '#1a1a2e' }] },
+  { elementType: 'labels.text.stroke', stylers: [{ color: '#1a1a2e' }] },
+  { elementType: 'labels.text.fill', stylers: [{ color: '#746855' }] },
+  { featureType: 'administrative.locality', elementType: 'labels.text.fill', stylers: [{ color: '#d59563' }] },
+  { featureType: 'poi', elementType: 'labels.text.fill', stylers: [{ color: '#d59563' }] },
+  { featureType: 'poi.park', elementType: 'geometry', stylers: [{ color: '#263c3f' }] },
+  { featureType: 'poi.park', elementType: 'labels.text.fill', stylers: [{ color: '#6b9a76' }] },
+  { featureType: 'road', elementType: 'geometry', stylers: [{ color: '#38414e' }] },
+  { featureType: 'road', elementType: 'geometry.stroke', stylers: [{ color: '#212a37' }] },
+  { featureType: 'road', elementType: 'labels.text.fill', stylers: [{ color: '#9ca5b3' }] },
+  { featureType: 'road.highway', elementType: 'geometry', stylers: [{ color: '#746855' }] },
+  { featureType: 'road.highway', elementType: 'geometry.stroke', stylers: [{ color: '#1f2835' }] },
+  { featureType: 'road.highway', elementType: 'labels.text.fill', stylers: [{ color: '#f3d19c' }] },
+  { featureType: 'transit', elementType: 'geometry', stylers: [{ color: '#2f3948' }] },
+  { featureType: 'transit.station', elementType: 'labels.text.fill', stylers: [{ color: '#d59563' }] },
+  { featureType: 'water', elementType: 'geometry', stylers: [{ color: '#17263c' }] },
+  { featureType: 'water', elementType: 'labels.text.fill', stylers: [{ color: '#515c6d' }] },
+  { featureType: 'water', elementType: 'labels.text.stroke', stylers: [{ color: '#17263c' }] },
+];
+
+// ===== AUTH LISTENER =====
+window.addEventListener('DOMContentLoaded', () => {
+  setTimeout(() => {
+    if (window.onAuthStateChanged) {
+      window.onAuthStateChanged((user) => {
+        if (user) {
+          window.currentUser = user;
+          showGameScreen(user);
+        } else {
+          showScreen('login-screen');
+        }
+      });
+    } else {
+      showScreen('login-screen');
+    }
+  }, 1000);
+});
+</script>
+</body>
+</html>
