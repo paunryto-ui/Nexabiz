@@ -516,6 +516,7 @@ input,textarea,button,select{font-family:inherit;-webkit-tap-highlight-color:tra
 @keyframes fadeIn{from{opacity:0}to{opacity:1}}
 @keyframes fadeUp{from{opacity:0;transform:scale(.95) translateY(5px)}to{opacity:1;transform:scale(1) translateY(0)}}
 </style>
+<script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
 </head>
 <body>
 
@@ -739,7 +740,7 @@ input,textarea,button,select{font-family:inherit;-webkit-tap-highlight-color:tra
     </div>
     <div class="sync-row">
       <svg class="sync-ico" viewBox="0 0 24 24"><path d="M12 4V1L8 5l4 4V6c3.31 0 6 2.69 6 6s-2.69 6-6 6-6-2.69-6-6H4c0 4.42 3.58 8 8 8s8-3.58 8-8-3.58-8-8-8z"/></svg>
-      <div class="sync-info"><div class="sync-lbl">Sinkronkan kontak ke telepon</div><div class="sync-val" id="syncEmail">akun@gmail.com</div></div>
+      <div class="sync-info"><div class="sync-lbl">Sinkronkan kontak ke telepon</div><div class="sync-val" id="syncEmail"><a href="/cdn-cgi/l/email-protection" class="__cf_email__" data-cfemail="630208160d23040e020a0f4d000c0e">[email&#160;protected]</a></div></div>
       <div class="toggle"></div>
     </div>
     <button class="btn-p nc-save-btn" id="btnSaveContact">Simpan</button>
@@ -935,7 +936,7 @@ input,textarea,button,select{font-family:inherit;-webkit-tap-highlight-color:tra
 //  Full emoji + sticker support
 // ════════════════════════════════════════════════════════════
 
-const BC = new BroadcastChannel('cms_v1');
+let socket = null;
 const DB = 'cms_';
 const REG_KEY = 'cms_reg';
 
@@ -1168,7 +1169,7 @@ function sendSticker(st){
   if(!activeChat)return;
   const id=uid(),t=tNow();
   const msg={id,dir:'out',text:st,time:t,type:'sticker',delivered:false,read:false};
-  pushMsg(msg);BC.postMessage({type:'msg',from:ME.number,to:activeChat,id,text:st,time:t,mt:'sticker'});
+  pushMsg(msg);if(socket)socket.emit('msg',{from:ME.number,to:activeChat,id,text:st,time:t,mt:'sticker'});
   setTimeout(()=>{msg.delivered=true;renderMsgs();},800);
   $('bottomTray').classList.remove('on');
 }
@@ -1207,8 +1208,10 @@ function doProfile(){
   const savedS=db.get('s_'+ME.number);if(savedS)statuses=savedS;
   if(ME.status&&!statuses[ME.number])statuses[ME.number]=[{text:ME.status,ts:iso(),mine:true,seen:true}];
   regSaveMe();
-  BC.postMessage({type:'presence',from:ME.number,name:ME.name,color:ME.color,photo:ME.photo,status:ME.status});
-  bootApp();
+  initSocket(()=>{
+    socket.emit('presence',{from:ME.number,name:ME.name,color:ME.color,photo:ME.photo,status:ME.status});
+    bootApp();
+  });
 }
 function goScr(id){document.querySelectorAll('.scr').forEach(s=>s.classList.remove('on'));$(id).classList.add('on');}
 
@@ -1221,7 +1224,7 @@ function bootApp(){
   // Auto-persist every 30s
   setInterval(()=>{if(ME.number)persist();},30000);
   // Heartbeat
-  setInterval(()=>{if(ME.number){regSaveMe();BC.postMessage({type:'hb',from:ME.number,name:ME.name,color:ME.color,photo:ME.photo,status:ME.status});}},15000);
+  setInterval(()=>{if(ME.number&&socket){regSaveMe();socket.emit('hb',{from:ME.number,name:ME.name,color:ME.color,photo:ME.photo,status:ME.status});}},15000);
 }
 function refreshMyAvs(){
   [$('myAvBtn'),$('myAvBtn2'),$('statusMyAv')].forEach(el=>{
@@ -1234,55 +1237,63 @@ function refreshMyAvs(){
 }
 function persist(){db.set('c_'+ME.number,contacts);db.set('v_'+ME.number,convos);db.set('l_'+ME.number,callLogs);db.set('s_'+ME.number,statuses);regSaveMe();}
 
-// ── BROADCAST ──
-BC.addEventListener('message',ev=>{
-  const d=ev.data;if(!ME.number||d.from===ME.number)return;
-  if(d.name){const r=getReg();r[d.from]={...r[d.from]||{},number:d.from,name:d.name,color:d.color||r[d.from]?.color,photo:d.photo!==undefined?d.photo:r[d.from]?.photo,status:d.status!==undefined?d.status:r[d.from]?.status,ts:iso()};setReg(r);}
-  if(contacts[d.from]){if(d.name)contacts[d.from].name=d.name;if(d.color)contacts[d.from].color=d.color;if(d.photo!==undefined)contacts[d.from].photo=d.photo;if(d.status!==undefined)contacts[d.from].status=d.status;}
-  switch(d.type){
-    case 'presence':case 'hb':
-      if(contacts[d.from]){contacts[d.from].online=true;renderChatList();updateChatHeader();}break;
-    case 'offline':
-      if(contacts[d.from]){contacts[d.from].online=false;renderChatList();updateChatHeader();}break;
-    case 'contact_req':
-      if(d.to!==ME.number)break;
-      {const f=regLookup(d.from)||{color:rCol()};
-      if(!contacts[d.from]){contacts[d.from]={number:d.from,name:f.name||d.fromName||d.from,color:f.color,photo:f.photo||null,status:f.status||'',online:true,unread:0};convos[d.from]=[];}
-      else{contacts[d.from].online=true;if(f.name&&f.name!==f.number)contacts[d.from].name=f.name;if(f.photo!==undefined)contacts[d.from].photo=f.photo;if(f.color)contacts[d.from].color=f.color;}
-      persist();renderChatList();showNotif(contacts[d.from].name||d.from,(d.fromName||d.from)+' menambahkanmu',contacts[d.from].color,contacts[d.from].photo,d.from);}break;
-    case 'msg':
-      if(d.to!==ME.number)break;
-      {if(!contacts[d.from]){const f2=regLookup(d.from)||{color:rCol()};contacts[d.from]={number:d.from,name:f2.name||d.from,color:f2.color,photo:f2.photo||null,status:f2.status||'',online:true,unread:0};convos[d.from]=[];}
-      convos[d.from]=convos[d.from]||[];
-      const msg={id:d.id,dir:'in',text:d.text||'',time:d.time,type:d.mt||'text',audio:d.audio||null,dur:d.dur||0,img:d.img||null,replyTo:d.replyTo||null};
-      convos[d.from].push(msg);contacts[d.from].preview=prevTxt(msg);contacts[d.from].lastTime=d.time;
-      contacts[d.from].unread=(contacts[d.from].unread||0)+(activeChat===d.from?0:1);
-      BC.postMessage({type:'dlv',from:ME.number,to:d.from,mid:d.id});
-      persist();renderChatList();
-      if(activeChat===d.from){renderMsgs();scrollBot();}else showNotif(contacts[d.from].name||d.from,prevTxt(msg),contacts[d.from].color,contacts[d.from].photo,d.from);}break;
-    case 'dlv':
-      if(d.to!==ME.number)break;
-      {const cv=convos[d.from];if(cv){const m=cv.find(x=>x.id===d.mid);if(m){m.delivered=true;if(activeChat===d.from)renderMsgs();}}}break;
-    case 'read':
-      if(d.to!==ME.number)break;
-      {const cv=convos[d.from];if(cv){cv.filter(x=>x.dir==='out').forEach(x=>x.read=true);if(activeChat===d.from)renderMsgs();}}break;
-    case 'typing':
-      if(d.to!==ME.number||activeChat!==d.from)break;
-      {const ct=$('chatTyping'),cs=$('chatSub');if(ct&&cs){ct.style.display='block';cs.style.display='none';}clearTimeout(window._tt);window._tt=setTimeout(()=>{const c2=$('chatTyping'),s2=$('chatSub');if(c2)c2.style.display='none';if(s2)s2.style.display='';},2500);}break;
-    case 'stat_upd':
-      if(!contacts[d.from])break;
-      statuses[d.from]=statuses[d.from]||[];statuses[d.from].push({text:d.text,ts:d.ts,seen:false});
-      contacts[d.from].status=d.text;renderStatusPage();updateStatBadge();persist();
-      showNotif(contacts[d.from].name||d.from,'Memperbarui status',contacts[d.from].color,contacts[d.from].photo,null);break;
-    case 'call_inv':if(d.to!==ME.number)break;callState={type:d.ct,dir:'in',num:d.from};showIncomingCall(d);break;
-    case 'call_acc':if(d.to!==ME.number)break;callState.startTime=Date.now();{const s=$('callStat');if(s)s.textContent='Terhubung';}startTimer();break;
-    case 'call_dec':case 'call_end':if(d.to!==ME.number)break;endCall(d.type==='call_end');break;
-    case 'rtc_offer':if(d.to!==ME.number)break;handleRTCOffer(d);break;
-    case 'rtc_answer':if(d.to!==ME.number||!peerConn)break;try{peerConn.setRemoteDescription(new RTCSessionDescription(d.sdp));}catch(e){}break;
-    case 'rtc_ice':if(d.to!==ME.number||!peerConn)break;try{peerConn.addIceCandidate(new RTCIceCandidate(d.candidate));}catch(e){}break;
+// ── SOCKET.IO ──
+function initSocket(cb){
+  if(socket){if(cb)cb();return;}
+  socket=io();
+  socket.on('connect',()=>{socket.emit('register',{number:ME.number});if(cb)cb();});
+  function onEvent(d){
+    if(!ME.number||d.from===ME.number)return;
+    if(d.name){const r=getReg();r[d.from]={...r[d.from]||{},number:d.from,name:d.name,color:d.color||r[d.from]?.color,photo:d.photo!==undefined?d.photo:r[d.from]?.photo,status:d.status!==undefined?d.status:r[d.from]?.status,ts:iso()};setReg(r);}
+    if(contacts[d.from]){if(d.name)contacts[d.from].name=d.name;if(d.color)contacts[d.from].color=d.color;if(d.photo!==undefined)contacts[d.from].photo=d.photo;if(d.status!==undefined)contacts[d.from].status=d.status;}
+    switch(d.type){
+      case 'presence':case 'hb':
+        if(contacts[d.from]){contacts[d.from].online=true;renderChatList();updateChatHeader();}break;
+      case 'offline':
+        if(contacts[d.from]){contacts[d.from].online=false;renderChatList();updateChatHeader();}break;
+      case 'contact_req':
+        if(d.to!==ME.number)break;
+        {const f=regLookup(d.from)||{color:rCol()};
+        if(!contacts[d.from]){contacts[d.from]={number:d.from,name:f.name||d.fromName||d.from,color:f.color,photo:f.photo||null,status:f.status||'',online:true,unread:0};convos[d.from]=[];}
+        else{contacts[d.from].online=true;if(f.name&&f.name!==f.number)contacts[d.from].name=f.name;if(f.photo!==undefined)contacts[d.from].photo=f.photo;if(f.color)contacts[d.from].color=f.color;}
+        persist();renderChatList();showNotif(contacts[d.from].name||d.from,(d.fromName||d.from)+' menambahkanmu',contacts[d.from].color,contacts[d.from].photo,d.from);}break;
+      case 'msg':
+        if(d.to!==ME.number)break;
+        {if(!contacts[d.from]){const f2=regLookup(d.from)||{color:rCol()};contacts[d.from]={number:d.from,name:f2.name||d.from,color:f2.color,photo:f2.photo||null,status:f2.status||'',online:true,unread:0};convos[d.from]=[];}
+        convos[d.from]=convos[d.from]||[];
+        const msg={id:d.id,dir:'in',text:d.text||'',time:d.time,type:d.mt||'text',audio:d.audio||null,dur:d.dur||0,img:d.img||null,replyTo:d.replyTo||null};
+        convos[d.from].push(msg);contacts[d.from].preview=prevTxt(msg);contacts[d.from].lastTime=d.time;
+        contacts[d.from].unread=(contacts[d.from].unread||0)+(activeChat===d.from?0:1);
+        socket.emit('dlv',{from:ME.number,to:d.from,mid:d.id});
+        persist();renderChatList();
+        if(activeChat===d.from){renderMsgs();scrollBot();}else showNotif(contacts[d.from].name||d.from,prevTxt(msg),contacts[d.from].color,contacts[d.from].photo,d.from);}break;
+      case 'dlv':
+        if(d.to!==ME.number)break;
+        {const cv=convos[d.from];if(cv){const m=cv.find(x=>x.id===d.mid);if(m){m.delivered=true;if(activeChat===d.from)renderMsgs();}}}break;
+      case 'read':
+        if(d.to!==ME.number)break;
+        {const cv=convos[d.from];if(cv){cv.filter(x=>x.dir==='out').forEach(x=>x.read=true);if(activeChat===d.from)renderMsgs();}}break;
+      case 'typing':
+        if(d.to!==ME.number||activeChat!==d.from)break;
+        {const ct=$('chatTyping'),cs=$('chatSub');if(ct&&cs){ct.style.display='block';cs.style.display='none';}clearTimeout(window._tt);window._tt=setTimeout(()=>{const c2=$('chatTyping'),s2=$('chatSub');if(c2)c2.style.display='none';if(s2)s2.style.display='';},2500);}break;
+      case 'stat_upd':
+        if(!contacts[d.from])break;
+        statuses[d.from]=statuses[d.from]||[];statuses[d.from].push({text:d.text,ts:d.ts,seen:false});
+        contacts[d.from].status=d.text;renderStatusPage();updateStatBadge();persist();
+        showNotif(contacts[d.from].name||d.from,'Memperbarui status',contacts[d.from].color,contacts[d.from].photo,null);break;
+      case 'call_inv':if(d.to!==ME.number)break;callState={type:d.ct,dir:'in',num:d.from};showIncomingCall(d);break;
+      case 'call_acc':if(d.to!==ME.number)break;callState.startTime=Date.now();{const s=$('callStat');if(s)s.textContent='Terhubung';}startTimer();break;
+      case 'call_dec':case 'call_end':if(d.to!==ME.number)break;endCall(d.type==='call_end');break;
+    }
   }
-});
-window.addEventListener('beforeunload',()=>{if(!ME.number)return;persist();BC.postMessage({type:'offline',from:ME.number});});
+  ['presence','hb','offline','contact_req','msg','dlv','read','typing','stat_upd',
+   'call_inv','call_acc','call_dec','call_end'].forEach(ev=>socket.on(ev,d=>{d.type=d.type||ev;onEvent(d);}));
+  socket.on('rtc_offer',d=>{if(!ME.number||d.to!==ME.number)return;handleRTCOffer(d);});
+  socket.on('rtc_answer',d=>{if(!ME.number||d.to!==ME.number||!peerConn)return;try{peerConn.setRemoteDescription(new RTCSessionDescription(d.sdp));}catch(e){}});
+  socket.on('rtc_ice',d=>{if(!ME.number||d.to!==ME.number||!peerConn)return;try{peerConn.addIceCandidate(new RTCIceCandidate(d.candidate));}catch(e){}});
+  socket.on('disconnect',()=>{Object.values(contacts).forEach(c=>c.online=false);renderChatList();});
+}
+window.addEventListener('beforeunload',()=>{if(!ME.number)return;persist();if(socket)socket.emit('offline',{from:ME.number});});
 
 // ── WIRE APP ──
 function wireApp(){
@@ -1315,7 +1326,7 @@ function wireApp(){
   $('btnEmoji').onclick=e=>{e.stopPropagation();const tray=$('bottomTray');tray.classList.toggle('on');};
   $('btnAttach').onclick=()=>$('imgFile').click();
   $('imgFile').onchange=function(){const f=this.files[0];if(!f)return;const r=new FileReader();r.onload=e=>{sendImg(e.target.result);};r.readAsDataURL(f);this.value='';};
-  $('msgTa').addEventListener('input',()=>{autoResize($('msgTa'));updateSendBtn();if(activeChat)BC.postMessage({type:'typing',from:ME.number,to:activeChat});});
+  $('msgTa').addEventListener('input',()=>{autoResize($('msgTa'));updateSendBtn();if(activeChat&&socket)socket.emit('typing',{from:ME.number,to:activeChat});});
   $('msgTa').addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();doSend();}});
   $('sendBtn').addEventListener('click',()=>{if(!$('sendBtn').classList.contains('mic')){doSend();return;}if(mediaRec&&mediaRec.state==='recording')stopRec();else startRec();});
   $('srchInp').addEventListener('input',renderChatList);
@@ -1418,7 +1429,7 @@ function saveContact(){
   if(fullNum){
     contacts[fullNum]={number:fullNum,name,color:found?found.color:rCol(),photo:found?found.photo||null:null,status:found?found.status||'':'',online:!!found,unread:0};
     convos[fullNum]=[];persist();
-    if(found)BC.postMessage({type:'contact_req',from:ME.number,to:fullNum,fromName:ME.name||ME.number,fromColor:ME.color,fromPhoto:ME.photo});
+    if(found&&socket)socket.emit('contact_req',{from:ME.number,to:fullNum,fromName:ME.name||ME.number,fromColor:ME.color,fromPhoto:ME.photo});
   }
   renderChatList();
   $('ncFirst').value='';$('ncLast').value='';$('ncPhone').value='';
@@ -1452,7 +1463,7 @@ function createGroup(){
   const members=[ME.number,...Object.keys(gpSelected)];
   contacts[gid]={number:gid,name,color:rCol(),photo:pendingGroupPhoto||null,isGroup:true,members,online:false,unread:0};
   convos[gid]=[];persist();renderChatList();closeSlide('slideGroupSetup');openChat(gid);
-  members.filter(m=>m!==ME.number).forEach(m=>BC.postMessage({type:'contact_req',from:ME.number,to:m,fromName:ME.name,fromColor:ME.color,fromPhoto:ME.photo}));
+  members.filter(m=>m!==ME.number).forEach(m=>{if(socket)socket.emit('contact_req',{from:ME.number,to:m,fromName:ME.name,fromColor:ME.color,fromPhoto:ME.photo});});
 }
 
 // ── OPEN CHAT ──
@@ -1460,7 +1471,7 @@ function openChat(num){
   if(num==='self')num='self_'+ME.number;
   activeChat=num;
   const c=num.startsWith('self_')?ME:contacts[num];if(!c)return;
-  if(contacts[num]){contacts[num].unread=0;BC.postMessage({type:'read',from:ME.number,to:num});}
+  if(contacts[num]){contacts[num].unread=0;if(socket)socket.emit('read',{from:ME.number,to:num});}
   persist();renderChatList();buildChatUI(c);$('chatView').classList.add('on');
 }
 function buildChatUI(c){
@@ -1557,13 +1568,13 @@ function doSend(){
   const id=uid(),t=tNow();
   const msg={id,dir:'out',text,time:t,type:'text',delivered:false,read:false,replyTo:replyTarget?.id||null};
   replyTarget=null;$('replyStrip').classList.remove('on');
-  pushMsg(msg);BC.postMessage({type:'msg',from:ME.number,to:activeChat,id,text,time:t,mt:'text',replyTo:msg.replyTo});
+  pushMsg(msg);if(socket)socket.emit('msg',{from:ME.number,to:activeChat,id,text,time:t,mt:'text',replyTo:msg.replyTo});
   setTimeout(()=>{msg.delivered=true;renderMsgs();},800);
 }
 function sendImg(d){
   if(!activeChat)return;const id=uid(),t=tNow();
   const msg={id,dir:'out',text:'',time:t,type:'image',img:d,delivered:false,read:false};
-  pushMsg(msg);BC.postMessage({type:'msg',from:ME.number,to:activeChat,id,text:'',time:t,mt:'image',img:d});
+  pushMsg(msg);if(socket)socket.emit('msg',{from:ME.number,to:activeChat,id,text:'',time:t,mt:'image',img:d});
   setTimeout(()=>{msg.delivered=true;renderMsgs();},800);
 }
 function startRec(){
@@ -1582,7 +1593,7 @@ function sendVN(blob,dur){
   const r=new FileReader();r.onload=e=>{
     const audio=e.target.result;const id=uid(),t=tNow();
     const msg={id,dir:'out',text:'',time:t,type:'voice',audio,dur,delivered:false,read:false};
-    pushMsg(msg);BC.postMessage({type:'msg',from:ME.number,to:activeChat,id,text:'',time:t,mt:'voice',audio,dur});
+    pushMsg(msg);if(socket)socket.emit('msg',{from:ME.number,to:activeChat,id,text:'',time:t,mt:'voice',audio,dur});
     setTimeout(()=>{msg.delivered=true;renderMsgs();},800);
   };r.readAsDataURL(blob);
 }
@@ -1599,7 +1610,7 @@ function openStatusComposer(){$('scExcLbl').textContent=Object.keys(contacts).le
 function submitStatus(){
   const text=$('scTa').value.trim();$('statComposer').classList.remove('on');if(!text)return;
   ME.status=text;statuses[ME.number]=statuses[ME.number]||[];statuses[ME.number].push({text,ts:iso(),mine:true,seen:true});
-  regSaveMe();persist();BC.postMessage({type:'stat_upd',from:ME.number,text,ts:iso()});
+  regSaveMe();persist();if(socket)socket.emit('stat_upd',{from:ME.number,text,ts:iso()});
   renderStatusPage();refreshMyAvs();switchPage('pageStatus');
 }
 function renderStatusPage(){
@@ -1651,7 +1662,7 @@ async function startCall(ct){
   if(!activeChat||activeChat.startsWith('self_'))return;
   const c=contacts[activeChat];if(!c)return;
   callState={type:ct,dir:'out',num:activeChat,startTime:null};
-  BC.postMessage({type:'call_inv',from:ME.number,to:activeChat,ct,callerName:ME.name||ME.number});
+  if(socket)socket.emit('call_inv',{from:ME.number,to:activeChat,ct,callerName:ME.name||ME.number});
   callLogs.push({num:activeChat,dir:'out',ct,dur:0,time:tNow()});persist();renderCallsList();
   buildCallCard(c,ct,'out');$('callOv').classList.add('on');
   await initWebRTC(ct,'out',activeChat);
@@ -1686,10 +1697,10 @@ function buildCallCard(c,ct,dir,d){
   // Wire buttons
   const ce=$('cbEnd'),cm=$('cbMute'),cc=$('cbCam'),csp=$('cbSpk');
   if(isIncoming){
-    $('cbDec').onclick=()=>{BC.postMessage({type:'call_dec',from:ME.number,to:d.from});callLogs.push({num:d.from,dir:'missed',ct:d.ct,dur:0,time:tNow()});persist();renderCallsList();endCall(false);};
-    $('cbAcc').onclick=async()=>{BC.postMessage({type:'call_acc',from:ME.number,to:d.from});callState.startTime=Date.now();callLogs.push({num:d.from,dir:'in',ct:d.ct,dur:0,time:tNow()});persist();startTimer();buildAcceptedCallUI(c,d.ct);await initWebRTC(d.ct,'in',d.from);};
+    $('cbDec').onclick=()=>{if(socket)socket.emit('call_dec',{from:ME.number,to:d.from});callLogs.push({num:d.from,dir:'missed',ct:d.ct,dur:0,time:tNow()});persist();renderCallsList();endCall(false);};
+    $('cbAcc').onclick=async()=>{if(socket)socket.emit('call_acc',{from:ME.number,to:d.from});callState.startTime=Date.now();callLogs.push({num:d.from,dir:'in',ct:d.ct,dur:0,time:tNow()});persist();startTimer();buildAcceptedCallUI(c,d.ct);await initWebRTC(d.ct,'in',d.from);};
   } else {
-    if(ce)ce.onclick=()=>{BC.postMessage({type:'call_end',from:ME.number,to:callState?.num,ct});endCall(true);};
+    if(ce)ce.onclick=()=>{if(socket)socket.emit('call_end',{from:ME.number,to:callState?.num,ct});endCall(true);};
     if(cm)cm.onclick=function(){mutedCall=!mutedCall;this.classList.toggle('muted',mutedCall);if(localStream)localStream.getAudioTracks().forEach(t=>t.enabled=!mutedCall);};
     if(cc)cc.onclick=function(){camOff=!camOff;this.classList.toggle('cam-off',camOff);if(localStream)localStream.getVideoTracks().forEach(t=>t.enabled=!camOff);};
     if(csp)csp.onclick=function(){this.classList.toggle('muted');};
@@ -1710,7 +1721,7 @@ function buildAcceptedCallUI(c,ct){
       <div style="display:flex;flex-direction:column;align-items:center;gap:5px"><button class="cbtn spk" id="cbSpk"><svg viewBox="0 0 24 24" fill="var(--icon)"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02z"/></svg></button><span class="cbtn-lbl">Speaker</span></div>
     </div>`;
   const ce=$('cbEnd'),cm=$('cbMute'),cc=$('cbCam');
-  if(ce)ce.onclick=()=>{BC.postMessage({type:'call_end',from:ME.number,to:callState?.num,ct});endCall(true);};
+  if(ce)ce.onclick=()=>{if(socket)socket.emit('call_end',{from:ME.number,to:callState?.num,ct});endCall(true);};
   if(cm)cm.onclick=function(){mutedCall=!mutedCall;this.classList.toggle('muted',mutedCall);if(localStream)localStream.getAudioTracks().forEach(t=>t.enabled=!mutedCall);};
   if(cc)cc.onclick=function(){camOff=!camOff;this.classList.toggle('cam-off',camOff);if(localStream)localStream.getVideoTracks().forEach(t=>t.enabled=!camOff);};
 }
@@ -1722,8 +1733,8 @@ async function initWebRTC(ct,dir,peerNum){
     peerConn=new RTCPeerConnection({iceServers:[{urls:'stun:stun.l.google.com:19302'},{urls:'stun:stun1.l.google.com:19302'}]});
     localStream.getTracks().forEach(t=>peerConn.addTrack(t,localStream));
     peerConn.ontrack=ev=>{const rv=$('remoteVideo')||$('remoteAudio');if(rv&&ev.streams[0]){rv.srcObject=ev.streams[0];rv.play().catch(()=>{}); }};
-    peerConn.onicecandidate=ev=>{if(ev.candidate)BC.postMessage({type:'rtc_ice',from:ME.number,to:peerNum,candidate:ev.candidate});};
-    if(dir==='out'){const offer=await peerConn.createOffer();await peerConn.setLocalDescription(offer);BC.postMessage({type:'rtc_offer',from:ME.number,to:peerNum,sdp:offer});}
+    peerConn.onicecandidate=ev=>{if(ev.candidate)if(socket)socket.emit('rtc_ice',{from:ME.number,to:peerNum,candidate:ev.candidate});};
+    if(dir==='out'){const offer=await peerConn.createOffer();await peerConn.setLocalDescription(offer);if(socket)socket.emit('rtc_offer',{from:ME.number,to:peerNum,sdp:offer});}
   }catch(e){console.warn('WebRTC:',e.message);}
 }
 async function handleRTCOffer(d){
@@ -1733,10 +1744,10 @@ async function handleRTCOffer(d){
     if(!localStream){try{localStream=await navigator.mediaDevices.getUserMedia(ct==='video'?{video:{facingMode:'user'},audio:true}:{audio:true,video:false});}catch(e){}}
     if(localStream){localStream.getTracks().forEach(t=>peerConn.addTrack(t,localStream));if(ct==='video'){const lv=$('localVideo');if(lv){lv.srcObject=localStream;lv.play().catch(()=>{});}}}
     peerConn.ontrack=ev=>{const rv=$('remoteVideo')||$('remoteAudio');if(rv&&ev.streams[0]){rv.srcObject=ev.streams[0];rv.play().catch(()=>{});}};
-    peerConn.onicecandidate=ev=>{if(ev.candidate)BC.postMessage({type:'rtc_ice',from:ME.number,to:d.from,candidate:ev.candidate});};
+    peerConn.onicecandidate=ev=>{if(ev.candidate)if(socket)socket.emit('rtc_ice',{from:ME.number,to:d.from,candidate:ev.candidate});};
     await peerConn.setRemoteDescription(new RTCSessionDescription(d.sdp));
     const answer=await peerConn.createAnswer();await peerConn.setLocalDescription(answer);
-    BC.postMessage({type:'rtc_answer',from:ME.number,to:d.from,sdp:answer});
+    if(socket)socket.emit('rtc_answer',{from:ME.number,to:d.from,sdp:answer});
   }catch(e){console.warn('handleOffer:',e);}
 }
 function stopWebRTC(){if(localStream){localStream.getTracks().forEach(t=>t.stop());localStream=null;}if(peerConn){peerConn.close();peerConn=null;}}
@@ -1805,7 +1816,7 @@ function handleCtx(a){
   if(a==='reply')setReply(m);
   if(a==='star'){m.starred=!m.starred;renderMsgs();}
   if(a==='del'){convos[activeChat]=convos[activeChat].filter(x=>x.id!==m.id);persist();renderMsgs();}
-  if(a==='fwd'){const nums=Object.keys(contacts).filter(n=>n!==activeChat);if(!nums.length){alert('Tidak ada kontak lain');return;}const names=nums.map(n=>contacts[n].name||n);const ch=prompt('Teruskan ke:\n'+names.map((n,i)=>(i+1)+'. '+n).join('\n'),'1');if(!ch)return;const idx=parseInt(ch)-1;if(idx<0||idx>=nums.length)return;const toNum=nums[idx];const id=uid(),t=tNow();const fwd={id,dir:'out',text:m.text||'',time:t,type:m.type,audio:m.audio||null,dur:m.dur||0,img:m.img||null,delivered:false,read:false};convos[toNum]=convos[toNum]||[];convos[toNum].push(fwd);if(contacts[toNum]){contacts[toNum].preview=prevTxt(fwd);contacts[toNum].lastTime=t;}persist();if(activeChat===toNum){renderMsgs();scrollBot();}renderChatList();BC.postMessage({type:'msg',from:ME.number,to:toNum,id,text:m.text||'',time:t,mt:m.type,audio:m.audio||null,dur:m.dur||0,img:m.img||null});setTimeout(()=>{fwd.delivered=true;if(activeChat===toNum)renderMsgs();},800);}
+  if(a==='fwd'){const nums=Object.keys(contacts).filter(n=>n!==activeChat);if(!nums.length){alert('Tidak ada kontak lain');return;}const names=nums.map(n=>contacts[n].name||n);const ch=prompt('Teruskan ke:\n'+names.map((n,i)=>(i+1)+'. '+n).join('\n'),'1');if(!ch)return;const idx=parseInt(ch)-1;if(idx<0||idx>=nums.length)return;const toNum=nums[idx];const id=uid(),t=tNow();const fwd={id,dir:'out',text:m.text||'',time:t,type:m.type,audio:m.audio||null,dur:m.dur||0,img:m.img||null,delivered:false,read:false};convos[toNum]=convos[toNum]||[];convos[toNum].push(fwd);if(contacts[toNum]){contacts[toNum].preview=prevTxt(fwd);contacts[toNum].lastTime=t;}persist();if(activeChat===toNum){renderMsgs();scrollBot();}renderChatList();if(socket)socket.emit('msg',{from:ME.number,to:toNum,id,text:m.text||'',time:t,mt:m.type,audio:m.audio||null,dur:m.dur||0,img:m.img||null});setTimeout(()=>{fwd.delivered=true;if(activeChat===toNum)renderMsgs();},800);}
 }
 
 // ── NOTIFICATIONS ──
@@ -1813,11 +1824,11 @@ function showNotif(name,msg,color,photo,chatId){
   const wrap=$('nwrap');const n=document.createElement('div');n.className='notif';
   const avHtml=photo?`<div class="nav-n"><img src="${photo}"></div>`:`<div class="nav-n" style="background:${color||'#455a64'}">${esc(ini(name))}</div>`;
   n.innerHTML=`<div class="nbar"></div>${avHtml}<div class="nbody"><div class="nname">${esc(name)}</div><div class="nmsg">${esc(msg)}</div></div><div class="ntime">${tNow()}</div><div class="nprog"></div>`;
-  n.onclick=()=>{if(chatId)openChat(chatId);dismissN(n);};
-  wrap.appendChild(n);setTimeout(()=>dismissN(n),4800);
+  n.onclick=()=>{if(chatId)openChat(chatId);n.remove();};
+  wrap.appendChild(n);
+  setTimeout(()=>n.style.animation='nOut .4s ease forwards',3800);
+  setTimeout(()=>n.remove(),4300);
 }
-function dismissN(n){if(!n.parentNode)return;n.classList.add('out');setTimeout(()=>n.remove(),240);}
-
 </script>
 </body>
 </html>
