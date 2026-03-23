@@ -1085,6 +1085,21 @@ function drawQR(canvas, text) {
 
 // ── INIT ──
 (function init(){
+  // ── AUTO-LOGIN: kalau sudah punya akun langsung masuk ──
+  const savedMe=db.get('me');
+  if(savedMe&&savedMe.number&&savedMe.name){
+    ME=savedMe;
+    const saved=db.get('c_'+ME.number);if(saved)contacts=saved;
+    const savedV=db.get('v_'+ME.number);if(savedV)convos=savedV;
+    const savedL=db.get('l_'+ME.number);if(savedL)callLogs=savedL;
+    const savedS=db.get('s_'+ME.number);if(savedS)statuses=savedS;
+    initSocket(()=>{
+      socket.emit('presence',{from:ME.number,name:ME.name,color:ME.color,photo:ME.photo,status:ME.status});
+      bootApp();
+    });
+    return;
+  }
+
   // Fill country selectors
   const fillSel=(selId,defaultCode)=>{
     const sel=$(selId);if(!sel)return;
@@ -1208,6 +1223,7 @@ function doProfile(){
   const savedS=db.get('s_'+ME.number);if(savedS)statuses=savedS;
   if(ME.status&&!statuses[ME.number])statuses[ME.number]=[{text:ME.status,ts:iso(),mine:true,seen:true}];
   regSaveMe();
+  db.set('me',ME);
   initSocket(()=>{
     socket.emit('presence',{from:ME.number,name:ME.name,color:ME.color,photo:ME.photo,status:ME.status});
     bootApp();
@@ -1235,7 +1251,7 @@ function refreshMyAvs(){
   });
   const sd=$('myStatSub');if(sd){const myS=statuses[ME.number];sd.textContent=myS&&myS.length?myS[myS.length-1].text:'Ketuk untuk tambah pembaruan';}
 }
-function persist(){db.set('c_'+ME.number,contacts);db.set('v_'+ME.number,convos);db.set('l_'+ME.number,callLogs);db.set('s_'+ME.number,statuses);regSaveMe();}
+function persist(){db.set('me',ME);db.set('c_'+ME.number,contacts);db.set('v_'+ME.number,convos);db.set('l_'+ME.number,callLogs);db.set('s_'+ME.number,statuses);regSaveMe();}
 
 // ── SOCKET.IO ──
 function initSocket(cb){
